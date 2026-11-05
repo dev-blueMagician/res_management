@@ -68,6 +68,14 @@ ColumnLayout {
             highlighted: combo.highlightedIndex === index
             font: combo.font
             text: combo.textRole ? modelData[combo.textRole] : modelData
+
+            contentItem: Label {
+                text: parent.text
+                font: parent.font
+                color: Theme.text
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
         }
     }
 }
