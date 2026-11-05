@@ -469,6 +469,16 @@ def test_void_is_audited_in_the_same_transaction(conn, manager, cashier, item):
     assert "Wrong table" in entry["details"]
 
 
+def test_void_audit_entry_reads_as_money_not_as_a_field_name(conn, manager, cashier, item):
+    sale = sales.record_sale(conn, cashier, [line(item)], "cash")
+    sales.void_sale(conn, manager, sale["id"], "Wrong table")
+    total = f"{sale['total_cents'] // 100}.{sale['total_cents'] % 100:02d}"
+
+    details = audit.list_entries(conn, manager)[0]["details"]
+
+    assert details == f"Sale #{sale['id']}, total {total}, reason: Wrong table"
+
+
 def test_failed_void_rolls_everything_back(conn, manager, cashier):
     item_id = add_item(conn, add_category(conn))
     first = stock_ingredient(conn, manager.id, "First", 1_000)

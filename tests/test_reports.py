@@ -608,3 +608,20 @@ def test_csv_with_no_rows_still_has_headers(tmp_path):
     path = tmp_path / "report.csv"
     reports.write_csv(path, ["name"], [])
     assert read_csv(path) == [["name"]]
+
+
+@pytest.mark.parametrize(
+    "name", ["restaurant.db", "restaurant.db-wal", "restaurant.log", "report.txt", "report", "x.csv.db"]
+)
+def test_csv_export_only_ever_writes_csv_files(tmp_path, name):
+    path = tmp_path / name
+    path.write_bytes(b"precious")
+    with pytest.raises(ValidationError, match=r"\.csv"):
+        reports.write_csv(path, ["name"], [{"name": "Tea"}])
+    assert path.read_bytes() == b"precious"
+
+
+def test_csv_extension_check_ignores_case(tmp_path):
+    path = tmp_path / "REPORT.CSV"
+    reports.write_csv(path, ["name"], [{"name": "Tea"}])
+    assert path.exists()

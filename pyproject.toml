@@ -20,7 +20,7 @@ restaurant-management = "restaurant.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-restaurant = ["db/schema/*.sql", "qml/**/*.qml"]
+restaurant = ["db/schema/*.sql", "qml/**/*.qml", "qml/**/qmldir"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

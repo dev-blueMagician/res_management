@@ -418,6 +418,45 @@ def test_filtering_by_category_and_deactivating_it(open_screen, conn, pizza, mar
     assert [i["name"] for i in menu.list_sellable_items(conn, manager)] == ["Margherita"]
 
 
+def _button_x(screen: Screen, row: str, caption: str) -> float:
+    pending = [screen._row_of(row)]
+    while pending:
+        item = pending.pop()
+        if item.inherits("QQuickAbstractButton") and item.property("text") == caption:
+            return item.mapToScene(item.boundingRect().topLeft()).x()
+        pending.extend(item.childItems())
+    raise AssertionError(f"No {caption!r} button in the {row!r} row")
+
+
+def _label_showing(screen: Screen, row: str, text: str) -> QQuickItem:
+    pending = [screen._row_of(row)]
+    while pending:
+        item = pending.pop()
+        if item.inherits("QQuickText") and item.property("text") == text:
+            return item
+        pending.extend(item.childItems())
+    raise AssertionError(f"Nothing shows {text!r} in the {row!r} row")
+
+
+def test_row_with_all_three_chips_keeps_its_category_name_and_lines_up(
+    open_screen, conn, manager, pizza, margherita, flour
+):
+    drinks = menu.create_category(conn, manager, "Drinks", 1)
+    water = menu.create_item(conn, manager, drinks["id"], "Water", 200)
+    menu.set_recipe(conn, manager, water["id"], [{"ingredient_id": flour["id"], "qty_milli": 1}])
+    menu.set_item_active(conn, manager, margherita["id"], False)
+    menu.set_category_active(conn, manager, pizza["id"], False)
+
+    screen = open_screen(manager, "menu")
+
+    assert {"No recipe", "Inactive", "Category inactive"} <= set(screen.row_texts("Margherita"))
+    category = _label_showing(screen, "Margherita", "Pizza")
+    assert category.width() >= category.property("implicitWidth")
+    assert category.property("truncated") is False
+    for chips_row, plain_row in (("Edit", "Edit"), ("Recipe", "Recipe"), ("Activate", "Deactivate")):
+        assert _button_x(screen, "Margherita", chips_row) == _button_x(screen, "Water", plain_row)
+
+
 def test_edit_category_renames_and_reorders(open_screen, conn, pizza, manager):
     screen = open_screen(manager, "menu")
     screen.click_row("Pizza")
@@ -740,7 +779,7 @@ def test_low_and_negative_stock_are_flagged_in_words_and_filtered(
     assert "OK" in screen.row_texts("Flour")
     assert "! Low" in screen.row_texts("Pepper")
     assert "! Below zero" in screen.row_texts("Basil")
-    assert "-2" in screen.row_texts("Basil")
+    assert "-2 bunch" in screen.row_texts("Basil")
     assert "2 ingredients are at or below their low-stock level." in screen.texts()
 
     screen.click("Low stock (2)")
@@ -831,7 +870,7 @@ def test_a_sale_elsewhere_refreshes_the_list_with_a_negative_flag(
     api.stockChanged.emit()
     screen.settle()
     assert "! Below zero" in screen.row_texts("Flour")
-    assert "-0.5" in screen.row_texts("Flour")
+    assert "-0.5 kg" in screen.row_texts("Flour")
 
 
 def test_inventory_is_closed_to_cashiers_even_if_loaded(open_screen, api, cashier):
@@ -1304,3 +1343,59 @@ def test_load_failures_show_the_error_state(open_screen, api, manager, section, 
     finally:
         api.conn = good
         broken.close()
+
+
+# --- Inventory: units and direct adjustments -----------------------------------------
+
+
+@pytest.mark.parametrize("unit", ["portions", "kilograms"])
+def test_inventory_list_shows_long_units_in_full(open_screen, conn, manager, unit):
+    created = inventory.create_ingredient(conn, manager, "Olive oil", unit, 120, 0)
+    inventory.receive_stock(conn, manager, created["id"], 12_500)
+    screen = open_screen(manager, "inventory")
+    label = next(
+        item
+        for item in screen._items()
+        if item.inherits("QQuickText") and unit in item.property("text") and screen._in_a_row(item)
+    )
+    assert label.property("text") == f"12.5 {unit}"
+    assert label.property("truncated") is False
+
+
+def test_adjust_stock_from_the_inventory_screen(open_screen, conn, manager, flour):
+    inventory.receive_stock(conn, manager, flour["id"], 10_000)
+    screen = open_screen(manager, "inventory")
+
+    screen.click("Adjust")
+    screen.type_in("Change, + or - (kg)", "-1.5")
+    screen.type_in("Note (optional)", "Dropped a bag")
+    screen.click("Save adjustment")
+
+    assert "Flour: -1.5 kg recorded." in screen.texts()
+    [movement] = [
+        m
+        for m in inventory.list_movements(conn, manager, flour["id"])
+        if m["movement_type"] == "adjusted"
+    ]
+    assert (movement["delta_milli"], movement["note"]) == (-1500, "Dropped a bag")
+    entry = audit.list_entries(conn, manager)[0]
+    assert entry["action"] == "stock.adjusted" and "Dropped a bag" in entry["details"]
+
+
+@pytest.mark.parametrize("typed", ["abc", "0", "1.2345"])
+def test_invalid_adjustment_is_reported_in_the_dialog(open_screen, conn, manager, flour, typed):
+    screen = open_screen(manager, "inventory")
+    screen.click("Adjust")
+    screen.type_in("Change, + or - (kg)", typed)
+    screen.click("Save adjustment")
+    assert "Save adjustment" in screen.button_texts()  # still open
+    assert inventory.list_movements(conn, manager, flour["id"]) == []
+
+
+def test_stock_clerk_can_adjust_too(open_screen, conn, manager, stock_clerk, flour):
+    screen = open_screen(stock_clerk, "inventory")
+    screen.click("Adjust")
+    screen.type_in("Change, + or - (kg)", "2")
+    screen.click("Save adjustment")
+    [movement] = inventory.list_movements(conn, manager, flour["id"])
+    assert (movement["movement_type"], movement["staff_id"]) == ("adjusted", stock_clerk.id)

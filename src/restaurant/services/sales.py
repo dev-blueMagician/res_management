@@ -14,6 +14,7 @@ from restaurant.core import (
     PermissionDeniedError,
     ValidationError,
     calculate_tax_cents,
+    format_money,
     require,
     utc_now,
 )
@@ -135,7 +136,7 @@ def void_sale(conn: sqlite3.Connection, actor: Actor, sale_id: int, reason: str)
             conn,
             actor.id,
             "sale_voided",
-            f"Sale #{sale_id}, total_cents={sale['total_cents']}, reason: {reason}",
+            f"Sale #{sale_id}, total {format_money(sale['total_cents'], '')}, reason: {reason}",
         )
     return _load_sale(conn, sale_id)
 

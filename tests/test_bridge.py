@@ -1030,7 +1030,8 @@ def test_every_report_exports_to_csv(api, conn, manager, item, flour, name, tmp_
     with open(path, encoding="utf-8-sig", newline="") as file:
         table = list(csv.reader(file))
     assert table[0] == [column.header for column in REPORTS[name].columns]
-    assert len(table) == result["row_count"] + 1 >= 2
+    total_line = 1 if name == "stock_value" else 0  # row_count counts data, not the Total line
+    assert len(table) == 1 + result["row_count"] + total_line >= 2
 
 
 def test_csv_holds_exact_decimals_not_display_strings(api, conn, manager, item, tmp_path):
@@ -1054,6 +1055,58 @@ def test_csv_stock_value_ends_with_a_total_row(api, conn, manager, flour, tmp_pa
         rows = list(csv.DictReader(file))
     assert rows[-1]["Ingredient"] == "Total"
     assert rows[-1]["Value"] == "6.00"
+
+
+def test_csv_row_count_is_the_ingredients_not_counting_the_total_line(
+    api, conn, manager, flour, tmp_path
+):
+    inventory.create_ingredient(conn, manager, "Salt", "kg", 50, 0)
+    api.session.start(manager)
+    result = _data(api.reports.exportCsv("stock_value", {}, str(tmp_path / "value.csv")))
+    assert result["row_count"] == 2
+
+
+def test_csv_export_cannot_overwrite_the_database_or_a_backup(file_api):
+    file_api.session.createFirstManager("boss", "Boss", PASSWORD, PASSWORD)
+    saved = Path(_data(file_api.backup.create())["path"])
+    saved_bytes = saved.read_bytes()
+    clerk = staff.create_staff(
+        file_api.conn, file_api.current_actor, "clerk", "Clerk", "stock_clerk", PASSWORD
+    )
+    file_api.session.start(Actor(clerk["id"], "clerk", "Clerk", Role.STOCK_CLERK))
+
+    for destination in (file_api.db_path, saved):
+        assert ".csv" in _error(file_api.reports.exportCsv("stock_levels", {}, str(destination)))
+
+    assert saved.read_bytes() == saved_bytes
+    assert file_api.conn.execute("SELECT COUNT(*) FROM staff").fetchone()[0] == 2
+    assert file_api.conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        "DELETE FROM settings",
+        "DELETE FROM settings WHERE key = 'currency_symbol'",
+        "UPDATE settings SET value = 'abc' WHERE key = 'tax_rate_bp'",
+    ],
+)
+def test_a_bad_settings_table_does_not_make_a_finished_action_report_failure(file_api, spoil):
+    file_api.session.createFirstManager("boss", "Boss", PASSWORD, PASSWORD)
+    file_api.session.end()
+    file_api.conn.execute(spoil)
+    result = file_api.session.signIn("boss", PASSWORD)
+    assert result["ok"] is True, result
+    assert file_api.session.signedIn is True
+
+
+def test_restaurant_name_property_survives_a_bad_settings_table(file_api):
+    file_api.conn.execute("UPDATE settings SET value = 'abc' WHERE key = 'tax_rate_bp'")
+    assert file_api.settings.restaurantName == "My Restaurant"
+    assert file_api.settings.currencySymbol == "$"
+    file_api.conn.execute("DELETE FROM settings")
+    assert file_api.settings.restaurantName == ""
+    assert file_api.settings.currencySymbol == ""
 
 
 def test_csv_accepts_a_file_dialog_url(api, manager, tmp_path):
@@ -1224,6 +1277,18 @@ def _run_app(data_dir: Path, *args: str, timeout: int = 60) -> subprocess.Comple
         text=True,
         timeout=timeout,
     )
+
+
+def test_only_the_bridge_imports_qt():
+    """The architecture's one rule about Qt: everything else stays plain Python."""
+    package = PROJECT_ROOT / "src" / "restaurant"
+    offenders = [
+        str(path.relative_to(package))
+        for path in package.rglob("*.py")
+        if "bridge" not in path.relative_to(package).parts
+        and "PySide6" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
 
 
 def test_smoke_test_starts_cleanly_and_makes_a_backup(tmp_path):

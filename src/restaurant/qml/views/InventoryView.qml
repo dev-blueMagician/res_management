@@ -11,8 +11,7 @@ ColumnLayout {
 
     readonly property int _historyPage: 50
     readonly property bool narrow: width < 900 // the smallest windows drop what the side panel shows
-    readonly property int _onHandWidth: 88
-    readonly property int _unitWidth: 48
+    readonly property int _onHandWidth: 152 // the unit shares this column, as units can be long
     readonly property int _lowWidth: 64
     readonly property int _costWidth: 72
     readonly property int _statusWidth: 96
@@ -235,11 +234,6 @@ ColumnLayout {
                         }
 
                         HeaderText {
-                            Layout.preferredWidth: root._unitWidth
-                            text: "Unit"
-                        }
-
-                        HeaderText {
                             visible: !root.narrow
                             Layout.preferredWidth: root._lowWidth
                             text: "Low at"
@@ -294,20 +288,13 @@ ColumnLayout {
 
                         Label {
                             Layout.preferredWidth: root._onHandWidth
-                            text: modelData.on_hand_text
+                            text: modelData.on_hand_text + " " + modelData.unit
                             color: !modelData.active ? Theme.textMuted
                                    : root.statusKind(modelData) === "danger" ? Theme.danger
                                    : root.statusKind(modelData) === "warning" ? Theme.warning : Theme.text
                             horizontalAlignment: Text.AlignRight
                             elide: Text.ElideRight
                             font.weight: root.isFlagged(modelData) ? Font.Bold : Font.Normal
-                        }
-
-                        Label {
-                            Layout.preferredWidth: root._unitWidth
-                            text: modelData.unit
-                            color: Theme.textMuted
-                            elide: Text.ElideRight
                         }
 
                         Label {
@@ -453,6 +440,14 @@ ColumnLayout {
 
                     AppButton {
                         Layout.fillWidth: true
+                        text: "Adjust"
+                        kind: "secondary"
+                        enabled: root.selected !== null && root.selected.active
+                        onClicked: stockDialog.openFor("adjust", root.selected)
+                    }
+
+                    AppButton {
+                        Layout.fillWidth: true
                         text: "Edit"
                         kind: "secondary"
                         onClicked: ingredientDialog.openEdit(root.selected)
@@ -460,7 +455,6 @@ ColumnLayout {
 
                     AppButton {
                         Layout.fillWidth: true
-                        Layout.columnSpan: 2
                         text: root.selected && !root.selected.active ? "Activate" : "Deactivate"
                         kind: "ghost"
                         onClicked: root.setActive(root.selected, !root.selected.active)

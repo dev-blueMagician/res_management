@@ -193,9 +193,8 @@ class ReportsBridge(BridgeObject):
         report, rows, summary = self._load(name, params)
         destination = local_path(path)
         columns = [(column.key, column.header) for column in report.columns]
-        if name == "stock_value":
-            rows = [*rows, _stock_value_total(report, summary)]
-        reports.write_csv(destination, columns, rows)
+        total_row = [_stock_value_total(report, summary)] if name == "stock_value" else []
+        reports.write_csv(destination, columns, [*rows, *total_row])
         return {"path": str(Path(destination)), "row_count": len(rows)}
 
     @api_slot("QVariant")

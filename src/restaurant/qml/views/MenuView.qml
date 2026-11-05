@@ -282,23 +282,30 @@ ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 2
 
-                            Label {
-                                Layout.fillWidth: true
-                                text: modelData.name
-                                color: modelData.active ? Theme.text : Theme.textMuted
-                                elide: Text.ElideRight
-                                font.weight: Font.DemiBold
-                            }
-
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: Theme.spacingS
 
-                                MutedText {
-                                    text: modelData.category_name
+                                Label {
                                     Layout.fillWidth: true
                                     Layout.maximumWidth: implicitWidth
+                                    text: modelData.name
+                                    color: modelData.active ? Theme.text : Theme.textMuted
+                                    elide: Text.ElideRight
+                                    font.weight: Font.DemiBold
                                 }
+
+                                MutedText {
+                                    Layout.fillWidth: true
+                                    text: modelData.category_name
+                                }
+                            }
+
+                            // Three chips only just fit a 1280-wide window, so they get their own line.
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Theme.spacingS
+                                visible: !modelData.has_recipe || !modelData.active || !modelData.category_active
 
                                 StatusChip {
                                     text: "No recipe"

@@ -58,7 +58,8 @@ ColumnLayout {
             var today = dataOf(api.reports.localDate(0), "")
             var range = {start_date: today, end_date: today}
             salesToday = dataOf(api.reports.run("sales_summary", range), {summary: {}}).summary
-            topItems = dataOf(api.reports.run("sales_by_item", range), {rows: []}).rows.slice(0, 5)
+            topItems = dataOf(api.reports.run("sales_by_item", range), {rows: []}).rows
+                .filter(row => row.quantity > 0).slice(0, 5)
         }
         if (canSeeStock) {
             lowItems = dataOf(api.reports.run("low_stock", {}), {rows: []}).rows

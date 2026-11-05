@@ -13,7 +13,7 @@ from datetime import date, tzinfo
 from decimal import Decimal
 from pathlib import Path
 
-from restaurant.core import Actor, ConflictError, Permission, require
+from restaurant.core import Actor, ConflictError, Permission, ValidationError, require
 from restaurant.services.sales import local_dates_to_utc
 
 DateInput = date | str
@@ -201,8 +201,11 @@ def write_csv(
     Each column is a row key, or ``(key, header)`` for a friendlier heading. Values
     under keys ending ``_cents`` or ``_milli`` come out as plain decimals (``12.50``,
     ``-1.500``). Text cells that a spreadsheet would run as a formula get a leading
-    single quote; numbers are never touched, so a negative stays a number.
+    single quote; numbers are never touched, so a negative stays a number. Only a
+    ``.csv`` path is written, which rules out the database, its backups and its log.
     """
+    if Path(path).suffix.lower() != ".csv":
+        raise ValidationError(f"Could not write {path}. Reports can only be saved as .csv files.")
     specs = [(column, column) if isinstance(column, str) else column for column in columns]
     table = [[_text_cell(header) for _, header in specs]]
     table += [[_cell(key, row[key]) for key, _ in specs] for row in rows]

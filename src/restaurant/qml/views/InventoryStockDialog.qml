@@ -3,11 +3,11 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
-// FR-I2, FR-I3: receive stock, record waste or record a stock count for one ingredient.
+// FR-I2, FR-I3: receive stock, record waste, adjust, or record a stock count for one ingredient.
 FormDialog {
     id: root
 
-    property string mode: "receive" // "receive", "waste" or "count"
+    property string mode: "receive" // "receive", "waste", "adjust" or "count"
     property var ingredient: ({})
 
     readonly property string _name: ingredient.name || ""
@@ -28,6 +28,8 @@ FormDialog {
             return api.inventory.recordWaste(ingredient.id, qty.text, note.text)
         if (mode === "count")
             return api.inventory.recordCount(ingredient.id, qty.text, note.text)
+        if (mode === "adjust")
+            return api.inventory.adjustStock(ingredient.id, qty.text, note.text)
         return api.inventory.receiveStock(ingredient.id, qty.text, note.text)
     }
 
@@ -45,8 +47,10 @@ FormDialog {
               : name + ": " + result.data.delta_text + " " + unit + " recorded.")
     }
 
-    title: (mode === "waste" ? "Record waste: " : mode === "count" ? "Stock count: " : "Receive stock: ") + _name
-    confirmText: mode === "waste" ? "Record waste" : mode === "count" ? "Save count" : "Receive"
+    title: (mode === "waste" ? "Record waste: " : mode === "count" ? "Stock count: "
+            : mode === "adjust" ? "Adjust stock: " : "Receive stock: ") + _name
+    confirmText: mode === "waste" ? "Record waste" : mode === "count" ? "Save count"
+                 : mode === "adjust" ? "Save adjustment" : "Receive"
     confirmEnabled: qty.text.trim() !== ""
     onOpened: qty.focusInput()
     onSubmitted: save()
@@ -62,7 +66,7 @@ FormDialog {
         id: qty
         Layout.fillWidth: true
         label: (root.mode === "waste" ? "Quantity wasted" : root.mode === "count" ? "Quantity counted"
-                                                                                  : "Quantity received")
+                : root.mode === "adjust" ? "Change, + or -" : "Quantity received")
                + (root._unit !== "" ? " (" + root._unit + ")" : "")
         inputMethodHints: Qt.ImhFormattedNumbersOnly
         onAccepted: note.focusInput()

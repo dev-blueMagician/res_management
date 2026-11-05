@@ -486,6 +486,20 @@ def test_manager_home_shows_todays_sales_and_stock(screen):
     assert screen.visible("homeLowItems")
 
 
+def test_top_sellers_leaves_out_items_whose_only_sales_were_voided(screen):
+    # Void every sale except the seven Margheritas, leaving one real top seller.
+    live = screen.conn.execute("SELECT id FROM sales WHERE voided_at IS NULL").fetchall()
+    keep = screen.conn.execute(
+        "SELECT sale_id FROM sale_items WHERE name_as_sold = 'Margherita' AND quantity = 7"
+    ).fetchone()[0]
+    for row in live:
+        if row[0] != keep:
+            sales.void_sale(screen.conn, screen.actors["manager"], row[0], "Testing")
+    screen.open("manager", "home")
+    assert screen.evaluate("homeTopItems", "rows.length") == 1
+    assert screen.evaluate("homeTopItems", "rows[0].name") == "Margherita"
+
+
 def test_cashier_home_has_no_sales_figures_and_no_stock_link(screen):
     screen.open("cashier", "home")
     for hidden in ("homeSalesToday", "homeVoidsToday", "homeTopItems", "homeStockValue", "homeLowItems"):
