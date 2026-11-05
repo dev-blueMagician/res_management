@@ -21,19 +21,20 @@ from restaurant.core import (
 )
 from restaurant.db import connection
 from restaurant.db.connection import connect
-from restaurant.services import audit, backup
+from restaurant.services import audit, backup, inventory, menu, sales
 
 BOSS = Actor(1, "boss", "Boss", Role.MANAGER)
 CASHIER = Actor(2, "cash", "Cash", Role.CASHIER)
 CLERK = Actor(3, "clerk", "Clerk", Role.STOCK_CLERK)
 OLD_NAME = "restaurant-backup-20200101-000000.db"
+WELL_FORMED_HASH = "scrypt$32768$8$3$c2FsdHNhbHRzYWx0$aGFzaGhhc2hoYXNoaGFzaA=="
 
 
 def _add_staff(conn, username, role="manager") -> int:
     return conn.execute(
         "INSERT INTO staff (username, full_name, password_hash, role, created_at) "
-        "VALUES (?, ?, 'x', ?, ?)",
-        (username, username.title(), role, utc_now()),
+        "VALUES (?, ?, ?, ?, ?)",
+        (username, username.title(), WELL_FORMED_HASH, role, utc_now()),
     ).lastrowid
 
 
@@ -475,6 +476,264 @@ def _wrong_columns(path: Path) -> None:
         conn.execute("DROP TABLE audit_log")
         conn.execute("CREATE TABLE audit_log (id INTEGER PRIMARY KEY)")
         conn.commit()
+
+
+def _edit(path: Path, *statements: str) -> None:
+    """Change a backup the way a person with a SQLite tool could: no rules enforced."""
+    with closing(sqlite3.connect(path, isolation_level=None)) as conn:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        for statement in statements:
+            conn.execute(statement)
+
+
+def _wrong_columns_in(table: str):
+    def spoil(path: Path) -> None:
+        _edit(path, f"DROP TABLE {table}", f"CREATE TABLE {table} (x)")
+
+    spoil.__name__ = f"_wrong_columns_in_{table}"
+    return spoil
+
+
+def _extra_column(path: Path) -> None:
+    _edit(path, "ALTER TABLE sales ADD COLUMN note TEXT")
+
+
+def _extra_table(path: Path) -> None:
+    _edit(path, "CREATE TABLE extra (x)")
+
+
+def _extra_index(path: Path) -> None:
+    _edit(path, "CREATE INDEX idx_extra ON staff (full_name)")
+
+
+def _view_instead_of_table(path: Path) -> None:
+    _edit(path, "DROP TABLE settings", "CREATE VIEW settings AS SELECT 'a' AS key, 'b' AS value")
+
+
+def _stock_triggers_dropped(path: Path) -> None:
+    _edit(
+        path,
+        "DROP TRIGGER trg_stock_movements_apply",
+        "DROP TRIGGER trg_stock_movements_no_update",
+        "DROP TRIGGER trg_stock_movements_no_delete",
+    )
+
+
+def _one_stock_trigger_replaced(path: Path) -> None:
+    _edit(
+        path,
+        "DROP TRIGGER trg_stock_movements_apply",
+        "CREATE TRIGGER trg_stock_movements_apply AFTER INSERT ON stock_movements "
+        "BEGIN UPDATE ingredients SET on_hand_milli = 0; END",
+    )
+
+
+def _privilege_trigger_added(path: Path) -> None:
+    _edit(
+        path,
+        "CREATE TRIGGER evil AFTER INSERT ON audit_log BEGIN UPDATE staff SET role = 'manager'; END",
+    )
+
+
+def _orphan_sale_item(path: Path) -> None:
+    _edit(
+        path,
+        "INSERT INTO sale_items (sale_id, menu_item_id, name_as_sold, category_as_sold, "
+        "unit_price_cents, quantity, line_total_cents) VALUES (999, 999, 'a', 'b', 1, 1, 1)",
+    )
+
+
+def _on_hand_differs_from_ledger(path: Path) -> None:
+    _edit(path, "INSERT INTO ingredients (name, unit, on_hand_milli) VALUES ('Beef', 'kg', 123456)")
+
+
+def _with_trigger_lifted(path: Path, trigger: str, *statements: str) -> None:
+    """Plant a bad value, leaving the schema exactly as it was: only the value is wrong."""
+    with closing(sqlite3.connect(path, isolation_level=None)) as conn:
+        sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = ?", (trigger,)).fetchone()[0]
+    _edit(path, f"DROP TRIGGER {trigger}", *statements, sql)
+
+
+def _float_price(path: Path) -> None:
+    _with_trigger_lifted(
+        path,
+        "trg_menu_items_whole_numbers_insert",
+        "INSERT INTO menu_categories (id, name) VALUES (1, 'C')",
+        "INSERT INTO menu_items (category_id, name, price_cents) VALUES (1, 'floaty', 12.5)",
+    )
+
+
+def _text_low_stock_level(path: Path) -> None:
+    _with_trigger_lifted(
+        path,
+        "trg_ingredients_whole_numbers_insert",
+        "INSERT INTO ingredients (name, unit, low_milli) VALUES ('Beef', 'kg', 'abc')",
+    )
+
+
+def _blob_in_a_text_column(path: Path) -> None:
+    _edit(path, "UPDATE staff SET full_name = CAST('x' AS BLOB)")
+
+
+def _broken_check_constraint(path: Path) -> None:
+    with closing(sqlite3.connect(path, isolation_level=None)) as conn:
+        conn.execute("PRAGMA ignore_check_constraints = ON")
+        conn.execute("UPDATE staff SET active = 7 WHERE username = 'clerk'")
+
+
+def _everyone_inactive(path: Path) -> None:
+    _edit(path, "UPDATE staff SET active = 0")
+
+
+def _only_active_manager_gone(path: Path) -> None:
+    _edit(path, "UPDATE staff SET role = 'cashier' WHERE role = 'manager'")
+
+
+def _manager_hash_unusable(path: Path) -> None:
+    _edit(path, "UPDATE staff SET password_hash = 'x'")
+
+
+def _no_staff_at_all(path: Path) -> None:
+    _edit(path, "DELETE FROM staff")
+
+
+def _no_settings(path: Path) -> None:
+    _edit(path, "DELETE FROM settings")
+
+
+def _setting_missing(key: str):
+    def spoil(path: Path) -> None:
+        _edit(path, f"DELETE FROM settings WHERE key = '{key}'")
+
+    spoil.__name__ = f"_setting_missing_{key}"
+    return spoil
+
+
+def _bad_tax_rate(value: str):
+    def spoil(path: Path) -> None:
+        _edit(path, f"UPDATE settings SET value = '{value}' WHERE key = 'tax_rate_bp'")
+
+    spoil.__name__ = f"_bad_tax_rate_{value}"
+    return spoil
+
+
+def _blank_restaurant_name(path: Path) -> None:
+    _edit(path, "UPDATE settings SET value = '  ' WHERE key = 'restaurant_name'")
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        _wrong_columns_in("sales"),
+        _wrong_columns_in("sale_items"),
+        _wrong_columns_in("menu_items"),
+        _wrong_columns_in("recipe_items"),
+        _wrong_columns_in("ingredients"),
+        _wrong_columns_in("stock_movements"),
+        _extra_column,
+        _extra_table,
+        _extra_index,
+        _view_instead_of_table,
+        _stock_triggers_dropped,
+        _one_stock_trigger_replaced,
+        _privilege_trigger_added,
+        _orphan_sale_item,
+        _on_hand_differs_from_ledger,
+        _float_price,
+        _text_low_stock_level,
+        _blob_in_a_text_column,
+        _broken_check_constraint,
+        _everyone_inactive,
+        _only_active_manager_gone,
+        _manager_hash_unusable,
+        _no_staff_at_all,
+        _no_settings,
+        _setting_missing("restaurant_name"),
+        _setting_missing("currency_symbol"),
+        _setting_missing("tax_rate_bp"),
+        _bad_tax_rate("abc"),
+        _bad_tax_rate("-1"),
+        _bad_tax_rate("10001"),
+        _bad_tax_rate("8.25"),
+        _blank_restaurant_name,
+    ],
+    ids=lambda spoil: spoil.__name__.lstrip("_"),
+)
+def test_tampered_backup_is_refused_and_changes_nothing(db_path, good_backup, spoil):
+    _add_staff_to_file(db_path, "newer")
+    spoil(good_backup)
+    before = _names(db_path.parent)
+
+    with pytest.raises(ValidationError):
+        backup.restore_backup(db_path, good_backup, BOSS)
+
+    assert _names(db_path.parent) == before  # no safety copy, no temporary file
+    assert "newer" in _usernames(db_path)
+
+
+def test_backup_with_real_data_restores_and_stays_consistent(db_path, backup_dir):
+    with closing(connect(db_path)) as conn:
+        cashier = Actor(2, "cash", "Cash", Role.CASHIER)
+        category = menu.create_category(conn, BOSS, "Mains")
+        item = menu.create_item(conn, BOSS, category["id"], "Burger", 1250)
+        beef = inventory.create_ingredient(conn, BOSS, "Beef", "kg", 900, 1000)
+        inventory.receive_stock(conn, BOSS, beef["id"], 5000, "Delivery")
+        menu.set_recipe(conn, BOSS, item["id"], [{"ingredient_id": beef["id"], "qty_milli": 200}])
+        line = {"menu_item_id": item["id"], "quantity": 2}
+        sales.record_sale(conn, cashier, [line], "cash")
+        voided = sales.record_sale(conn, cashier, [line], "card")
+        sales.void_sale(conn, BOSS, voided["id"], "Wrong order")
+        saved = Path(backup.create_backup(conn, BOSS, backup_dir)["path"])
+
+    backup.restore_backup(db_path, saved, BOSS)
+
+    with closing(connect(db_path)) as conn:
+        assert conn.execute("SELECT on_hand_milli FROM ingredients").fetchone()[0] == 4600
+        assert conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0] == 2
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def _schema_objects(conn) -> list[tuple]:
+    return [
+        tuple(row)
+        for row in conn.execute("SELECT type, name, tbl_name FROM sqlite_master ORDER BY name")
+    ]
+
+
+def test_a_version_1_backup_is_checked_against_version_1_then_upgraded(db_path, tmp_path):
+    old = tmp_path / "version1.db"
+    with closing(sqlite3.connect(old, isolation_level=None)) as conn:
+        connection.migrate(conn, target=1)
+        _add_staff(conn, "oldboss")
+
+    backup.restore_backup(db_path, old, BOSS)
+
+    assert _usernames(db_path) == {"oldboss"}
+    with closing(sqlite3.connect(db_path)) as conn, closing(connect(":memory:")) as fresh:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == backup._latest_schema_version()
+        assert _schema_objects(conn) == _schema_objects(fresh)
+
+
+def test_a_version_1_backup_holding_a_float_is_refused(db_path, tmp_path):
+    old = tmp_path / "version1.db"
+    with closing(sqlite3.connect(old, isolation_level=None)) as conn:
+        connection.migrate(conn, target=1)
+        _add_staff(conn, "oldboss")
+        category = conn.execute("INSERT INTO menu_categories (name) VALUES ('C')").lastrowid
+        conn.execute(
+            "INSERT INTO menu_items (category_id, name, price_cents) VALUES (?, 'floaty', 12.5)",
+            (category,),
+        )
+    before = db_path.read_bytes()
+    with pytest.raises(ValidationError):
+        backup.restore_backup(db_path, old, BOSS)
+    assert db_path.read_bytes() == before
+
+
+def test_a_refused_backup_says_why_in_plain_words(db_path, good_backup):
+    _everyone_inactive(good_backup)
+    with pytest.raises(ValidationError, match="active manager"):
+        backup.restore_backup(db_path, good_backup, BOSS)
 
 
 @pytest.mark.parametrize(

@@ -114,3 +114,18 @@ def test_update_rolls_back_every_field_when_audit_fails(conn, manager, monkeypat
         settings.update(conn, manager, restaurant_name="Bistro", tax_rate_bp=825)
     assert conn.in_transaction is False
     assert settings.get_all(conn) == DEFAULTS
+
+
+@pytest.mark.parametrize("bad", [10_001, -1, 825.0, True, "825"])
+def test_tax_rate_error_speaks_in_percent_not_basis_points(conn, manager, bad):
+    with pytest.raises(ValidationError) as error:
+        settings.update(conn, manager, tax_rate_bp=bad)
+    assert "basis points" not in str(error.value)
+    assert "0 to 100" in str(error.value)
+
+
+def test_get_text_reads_one_setting_and_does_not_care_about_the_others(conn):
+    conn.execute("UPDATE settings SET value = 'abc' WHERE key = 'tax_rate_bp'")
+    assert settings.get_text(conn, "currency_symbol") == "$"
+    conn.execute("DELETE FROM settings")
+    assert settings.get_text(conn, "currency_symbol") == ""

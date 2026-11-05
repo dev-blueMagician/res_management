@@ -78,7 +78,7 @@ class SettingsBridge(BridgeObject):
 
     def _read(self, key: str) -> str:
         try:
-            return settings.get_all(self.conn)[key]
+            return settings.get_text(self.conn, key)
         except sqlite3.Error:
             return ""  # a display value only; the slots report the failure
 

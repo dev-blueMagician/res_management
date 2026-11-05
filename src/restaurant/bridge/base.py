@@ -103,7 +103,8 @@ class BridgeObject(QObject):
         return self.api.current_actor
 
     def currency_symbol(self) -> str:
-        return settings.get_all(self.conn)["currency_symbol"]
+        """Only this setting: a bad one elsewhere must not fail an action that has already run."""
+        return settings.get_text(self.conn, "currency_symbol")
 
 
 def to_qml(value: Any, symbol: str) -> Any:

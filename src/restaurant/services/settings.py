@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping
 
 from restaurant.core import Actor, Permission, ValidationError, require
 from restaurant.db.connection import transaction
@@ -22,6 +23,22 @@ def get_all(conn: sqlite3.Connection, actor: Actor | None = None) -> dict:
     values = {row["key"]: row["value"] for row in conn.execute("SELECT key, value FROM settings")}
     values["tax_rate_bp"] = int(values["tax_rate_bp"])
     return values
+
+
+def get_text(conn: sqlite3.Connection, key: str) -> str:
+    """One setting as stored, or "" if it is missing. For display: bad content never raises."""
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row is not None else ""
+
+
+def check_stored(values: Mapping[str, object]) -> None:
+    """Raise ValidationError unless these stored settings are all present and usable."""
+    _clean_restaurant_name(values.get("restaurant_name"))
+    _clean_currency_symbol(values.get("currency_symbol"))
+    rate = values.get("tax_rate_bp")
+    if not (isinstance(rate, str) and rate.isascii() and rate.isdigit()):
+        raise ValidationError("The stored tax rate is not a whole number.")
+    _check_tax_rate(int(rate))
 
 
 def update(
@@ -76,5 +93,5 @@ def _clean_currency_symbol(symbol: str) -> str:
 def _check_tax_rate(tax_rate_bp: int) -> int:
     # type() rather than isinstance: True is an int, and floats have no place in money.
     if type(tax_rate_bp) is not int or not 0 <= tax_rate_bp <= MAX_TAX_RATE_BP:
-        raise ValidationError("Tax rate must be a whole number from 0 to 10000 basis points.")
+        raise ValidationError("Tax rate must be a percentage from 0 to 100.")
     return tax_rate_bp

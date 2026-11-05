@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Context, Decimal, Inexact, InvalidOperation, Overflow
 from enum import Enum
+
+
+# Parsing raises rather than rounds, so no typed digit can be silently lost.
+_EXACT = Context(prec=100, traps=[Inexact, InvalidOperation, Overflow])
 
 
 class AppError(Exception):
@@ -102,7 +106,7 @@ def parse_quantity(text: str) -> int:
 
 def _parse_scaled(text: str, scale: int, label: str) -> int:
     try:
-        value = Decimal(str(text).strip()) * scale
+        value = _EXACT.multiply(Decimal(str(text).strip()), Decimal(scale))
     except ArithmeticError:
         raise ValidationError(f"Enter a valid {label}.") from None
     if not value.is_finite() or value != value.to_integral_value():

@@ -52,17 +52,32 @@ def hash_password(password: str) -> str:
     return "$".join(("scrypt", str(_SCRYPT_N), str(_SCRYPT_R), str(_SCRYPT_P), *encoded))
 
 
+def _parse_hash(stored: str) -> tuple[int, int, int, bytes, bytes]:
+    """The parts of a stored hash. Raises ValueError (or binascii.Error) if malformed."""
+    scheme, n, r, p, salt, expected = stored.split("$")
+    if scheme != "scrypt":
+        raise ValueError("unknown password scheme")
+    salt_bytes = base64.b64decode(salt, validate=True)
+    expected_bytes = base64.b64decode(expected, validate=True)
+    if not expected_bytes:
+        raise ValueError("empty password hash")
+    return int(n), int(r), int(p), salt_bytes, expected_bytes
+
+
+def is_well_formed_hash(stored: object) -> bool:
+    """Could any password ever verify against this? Says nothing about which password."""
+    try:
+        n, r, p, _salt, _expected = _parse_hash(stored)  # type: ignore[arg-type]
+    except (ValueError, AttributeError):
+        return False
+    return n > 1 and n & (n - 1) == 0 and r > 0 and p > 0
+
+
 def verify_password(password: str, stored: str) -> bool:
     """Compare in constant time. An unusable stored hash costs the same work and fails."""
     try:
-        scheme, n, r, p, salt, expected = stored.split("$")
-        if scheme != "scrypt":
-            raise ValueError("unknown password scheme")
-        salt_bytes = base64.b64decode(salt, validate=True)
-        expected_bytes = base64.b64decode(expected, validate=True)
-        if not expected_bytes:
-            raise ValueError("empty password hash")
-        actual = _scrypt(password, salt_bytes, int(n), int(r), int(p), len(expected_bytes))
+        n, r, p, salt_bytes, expected_bytes = _parse_hash(stored)
+        actual = _scrypt(password, salt_bytes, n, r, p, len(expected_bytes))
     except (ValueError, OverflowError, MemoryError):  # binascii.Error is a ValueError
         hash_password(password)
         return False

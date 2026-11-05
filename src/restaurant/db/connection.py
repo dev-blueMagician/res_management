@@ -27,8 +27,11 @@ def connect(path: str | Path) -> sqlite3.Connection:
     return conn
 
 
-def migrate(conn: sqlite3.Connection) -> None:
-    """Apply every numbered migration newer than the database's user_version."""
+def migrate(conn: sqlite3.Connection, target: int | None = None) -> None:
+    """Apply every numbered migration newer than the database's user_version.
+
+    ``target`` stops at that version, to see what an older database should look like.
+    """
     current = conn.execute("PRAGMA user_version").fetchone()[0]
     migrations = sorted(
         (int(match.group(1)), file)
@@ -41,7 +44,7 @@ def migrate(conn: sqlite3.Connection) -> None:
             f"Database schema version {current} is newer than this app supports ({latest})."
         )
     for version, file in migrations:
-        if version <= current:
+        if version <= current or (target is not None and version > target):
             continue
         script = file.read_text(encoding="utf-8")
         # executescript commits first, so the BEGIN/COMMIT live in the script
