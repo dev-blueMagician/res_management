@@ -199,7 +199,7 @@ Report names: `sales_summary`, `sales_by_item`, `sales_by_category`, `sales_by_p
 |---|---|
 | `listReports()` | `[{name, title, dated}]` this role may run |
 | `run(name, params)` | `{name, title, columns, rows, summary}` |
-| `exportCsv(name, params, path)` | `{path, row_count}`. `path` may be a FileDialog URL |
+| `exportCsv(name, params, path)` | `{path, row_count}`. `path` may be a FileDialog URL and must end in `.csv`. `row_count` leaves out the stock value report's Total line |
 | `localDate(daysFromToday)` | `YYYY-MM-DD`: `localDate(0)` is today, `localDate(-6)` a week's start |
 | `openReport(name)` | the name. Goes to the Reports section on that report, if the role may run it |
 | `takeRequestedReport()` | the name `openReport` asked for, or `""`. The Reports screen reads it once on load |
@@ -234,10 +234,12 @@ FileDialog {
 
 ## Writing a screen
 
-- Replace the placeholder in `src/restaurant/qml/views/`. The root is an `Item` or layout with no
+- Add the screen in `src/restaurant/qml/views/`. The root is an `Item` or layout with no
   `required` properties. The shell sizes it to the content area, 1016x688 at 1280x800, with padding
   already applied. It must look right at that size and larger.
-- `import "../components"`. Use `Label` rather than `Text`, and `Theme` for every colour, size and font.
+- `import "../components"` as the last import, so that `Label` means the plain-text one in that folder,
+  and use it rather than `Text`: stored data must never be read as markup, and a test checks this. Use
+  `Theme` for every colour, size and font.
 - Load data in `Component.onCompleted` and reload from the signals above. The view is destroyed when
   the user navigates away, and must tolerate `ok: false` for every role and when signed out, because
   `tests/test_qml_load.py` loads it in those states and fails on any QML warning.
@@ -249,6 +251,7 @@ Every entry works from `import "../components"`. Anything not listed below is an
 
 | Component | Use |
 |---|---|
+| `Label` | Qt's Label with `textFormat: Text.PlainText`, in place of Qt's own |
 | `Theme` | singleton: colours, `spacingXs/S/M/L/Xl`, `controlHeight`, `touchHeight`, `rowHeight`, `radius`, `fontFamily`, `fontSmall/Body/Large/Title/Display` |
 | `AppButton` | `kind`: `primary`, `secondary`, `danger`, `ghost`. `large: true` for touch-sized sales buttons |
 | `AppTextField` | `label`, `text`, `placeholderText`, `errorText`, `echoMode`, `readOnly`, `large`; `accepted()`; `focusInput()` |
@@ -295,9 +298,12 @@ renders blank text unless `QT_QPA_FONTDIR` names a font folder, so the tool poin
 - `tests/test_qml_load.py`: loads Main.qml and every file under `views/` and `components/` by glob, for
   each role and signed out, over demo data, and fails on any QML warning or error.
 
+- `tests/test_stored_text_is_plain.py`: every label on every screen and dialog is plain text over data full
+  of markup, and a local listener sees no requests.
+
 ## App files
 
-`python -m restaurant` keeps everything in the data folder: `%APPDATA%\RestaurantManagement`, or
+`python -m restaurant`, whose code is in `bridge/app.py`, keeps everything in the data folder: `%APPDATA%\RestaurantManagement`, or
 `RESTAURANT_DATA_DIR` if set. It holds `restaurant.db`, `backups\`, `restaurant.lock`, safety copies from
 restores, and `restaurant.log`, where unexpected errors go with their tracebacks. Exit codes: 0 normal,
 1 QML failed to load (or warned, under `--smoke-test`), 3 already running, 4 data folder unusable,
