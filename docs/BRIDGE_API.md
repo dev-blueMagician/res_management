@@ -201,6 +201,8 @@ Report names: `sales_summary`, `sales_by_item`, `sales_by_category`, `sales_by_p
 | `run(name, params)` | `{name, title, columns, rows, summary}` |
 | `exportCsv(name, params, path)` | `{path, row_count}`. `path` may be a FileDialog URL |
 | `localDate(daysFromToday)` | `YYYY-MM-DD`: `localDate(0)` is today, `localDate(-6)` a week's start |
+| `openReport(name)` | the name. Goes to the Reports section on that report, if the role may run it |
+| `takeRequestedReport()` | the name `openReport` asked for, or `""`. The Reports screen reads it once on load |
 
 `columns` is `[{key, header, display, numeric}]`, and goes straight into `DataTable`:
 

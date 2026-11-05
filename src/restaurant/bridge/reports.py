@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date, timedelta
+from pathlib import Path
 from typing import NamedTuple
 
 from restaurant.bridge.base import (
@@ -14,7 +15,7 @@ from restaurant.bridge.base import (
     to_qml,
     whole_number,
 )
-from restaurant.core import Permission, ValidationError
+from restaurant.core import Permission, ValidationError, require
 from restaurant.services import reports
 
 
@@ -143,6 +144,29 @@ def _with_status(row: dict) -> dict:
 
 
 class ReportsBridge(BridgeObject):
+    def __init__(self, api) -> None:
+        super().__init__(api)
+        self._requested_report = ""
+
+    @api_slot(str)
+    def openReport(self, name: str) -> str:
+        """Go to the Reports section on one report, such as the home screen's low-stock link."""
+        actor = self.actor
+        report = REPORTS.get(name)
+        if report is None:
+            raise ValidationError("That report doesn't exist.")
+        require(actor, report.permission)
+        self._requested_report = name
+        self.api.session.goTo("reports")
+        return name
+
+    @api_slot()
+    def takeRequestedReport(self) -> str:
+        """The report openReport asked for, or "". The Reports screen reads it once."""
+        self.actor  # noqa: B018 - raises when nobody is signed in
+        name, self._requested_report = self._requested_report, ""
+        return name
+
     @api_slot()
     def listReports(self) -> list:
         actor = self.actor
@@ -172,7 +196,7 @@ class ReportsBridge(BridgeObject):
         if name == "stock_value":
             rows = [*rows, _stock_value_total(report, summary)]
         reports.write_csv(destination, columns, rows)
-        return {"path": destination, "row_count": len(rows)}
+        return {"path": str(Path(destination)), "row_count": len(rows)}
 
     @api_slot("QVariant")
     def localDate(self, days_from_today: object) -> str:
