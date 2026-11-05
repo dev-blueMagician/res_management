@@ -241,9 +241,10 @@ def test_markup_cannot_forge_extra_lines_in_the_audit_log(hostile, open_window):
 
 def test_markup_in_a_data_table_is_shown_literally(hostile, open_window):
     hostile.session.start(hostile.boss)
-    window = open_window()
-    assert hostile.session.goTo("reports")["ok"]
+    window = open_window()  # home, whose low-stock table lists the hostile ingredient
     QTest.qWait(SETTLE_MS)
+    shown = [item.property("text") for item in window.text_items() if item.isVisible()]
+    assert any(text.startswith("<img src=") and text.endswith("Oil") for text in shown), shown
     assert window.not_plain() == []
 
 

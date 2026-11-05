@@ -29,6 +29,11 @@ py -m venv .venv
 
 The commands here call the virtual environment's Python directly, so you don't need to activate it.
 
+**Keep the clone's path under about 90 characters.** PySide6 installs some very long file names, so from a
+deeper folder `pip` fails with `WinError 206` or `No such file or directory`, naming a path under
+`site-packages\PySide6`. Either clone somewhere shorter, or
+[enable long paths in Windows](https://pip.pypa.io/warnings/enable-long-paths) and run `pip` again.
+
 ## Run it
 
 ```powershell
@@ -56,7 +61,9 @@ $env:RESTAURANT_DATA_DIR = "$PWD\demo-data"
 .venv\Scripts\python.exe -m restaurant
 ```
 
-The tool prints the three usernames and their passwords, which are new each run and shown only once.
+The sales stop at the current time, so before lunch **Home** shows nothing for today; **Reports**, on
+**Last 7 days**, shows them. The tool prints the three usernames and their passwords, which are new each
+run and shown only once.
 If you lose them, delete the `demo-data` folder and run it again.
 
 `RESTAURANT_DATA_DIR` lasts until that PowerShell window closes, or run
