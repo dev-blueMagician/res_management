@@ -1,0 +1,3 @@
+manager      username: maria    password: jIDVTAMR8v5D
+cashier      username: carlos   password: gelItOI57u86
+stock_clerk  username: sam      password: EzKDk47VXn_b

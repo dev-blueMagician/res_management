@@ -5,7 +5,6 @@
 A Windows desktop app for **one restaurant on one shared PC**. Staff sign in with their own account to
 take sales, keep the menu and recipes, track ingredient stock and read reports. It works offline.
 
-**Technology.** The request named "QL" as the framework and "SQL" as the database. That was taken to mean
 **Qt/QML** for the interface, with **Python (PySide6)** behind it and **SQLite** as the database, since
 one app on one PC needs no database server.
 
